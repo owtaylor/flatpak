@@ -196,6 +196,7 @@ sources = [
   'flatpak-utils-http.c',
   'flatpak-utils.c',
   'flatpak-uri.c',
+  'flatpak-zstd-compressor.c',
   'flatpak-zstd-decompressor.c',
 ]
 
