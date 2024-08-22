@@ -13,6 +13,7 @@ import http.server as http_server
 repositories = {}
 icons = {}
 
+
 def get_index():
     results = []
     for repo_name in sorted(repositories.keys()):
@@ -28,6 +29,7 @@ def get_index():
         'Results': results
         }, indent=4)
 
+
 def cache_icon(data_uri):
     prefix = 'data:image/png;base64,'
     assert data_uri.startswith(prefix)
@@ -40,29 +42,24 @@ def cache_icon(data_uri):
 
     return '/icons/' + filename
 
+
 serial = 0
 server_start_time = int(time.time())
 
+
 def get_etag():
     return str(server_start_time) + '-' + str(serial)
+
 
 def modified():
     global serial
     serial += 1
 
-def parse_http_date(date):
-    parsed = parsedate(date)
-    if parsed is not None:
-        return timegm(parsed)
-    else:
-        return None
 
 class RequestHandler(http_server.BaseHTTPRequestHandler):
     def check_route(self, route):
         parts = self.path.split('?', 1)
         path = parts[0].split('/')
-
-        result = []
 
         route_path = route.split('/')
         print((route_path, path))
@@ -107,8 +104,9 @@ class RequestHandler(http_server.BaseHTTPRequestHandler):
             else:
                 response_string = get_index()
             add_headers['Etag'] = etag
-        elif self.check_route('/icons/@filename') :
+        elif self.check_route('/icons/@filename'):
             response_string = icons[self.matches['filename']]
+            assert isinstance(response_string, bytes)
             response_content_type = 'image/png'
         else:
             response = 404
@@ -133,6 +131,7 @@ class RequestHandler(http_server.BaseHTTPRequestHandler):
             if isinstance(response_string, bytes):
                 self.wfile.write(response_string)
             else:
+                assert isinstance(response_string, str)
                 self.wfile.write(response_string.encode('utf-8'))
 
     def do_HEAD(self):
@@ -219,7 +218,7 @@ class RequestHandler(http_server.BaseHTTPRequestHandler):
             ref = self.matches['ref']
 
             repo = repositories.setdefault(repo_name, {})
-            blobs = repo.setdefault('blobs', {})
+            repo.setdefault('blobs', {})
             manifests = repo.setdefault('manifests', {})
             images = repo.setdefault('images', [])
 
@@ -245,20 +244,22 @@ class RequestHandler(http_server.BaseHTTPRequestHandler):
             self.end_headers()
             return
 
+
 def run(dir):
     RequestHandler.protocol_version = "HTTP/1.0"
-    httpd = http_server.HTTPServer( ("127.0.0.1", 0), RequestHandler)
+    httpd = http_server.HTTPServer(("127.0.0.1", 0), RequestHandler)
     host, port = httpd.socket.getsockname()[:2]
     with open("httpd-port", 'w') as file:
         file.write("%d" % port)
     try:
-        os.write(3, bytes("Started\n", 'utf-8'));
-    except:
+        os.write(3, bytes("Started\n", 'utf-8'))
+    except OSError:
         pass
-    print("Serving HTTP on port %d" % port);
+    print("Serving HTTP on port %d" % port)
     if dir:
         os.chdir(dir)
     httpd.serve_forever()
+
 
 if __name__ == '__main__':
     dir = None
