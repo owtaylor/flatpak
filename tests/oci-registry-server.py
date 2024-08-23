@@ -5,7 +5,7 @@ import base64
 import hashlib
 import json
 import os
-import sys
+import ssl
 import time
 
 from urllib.parse import parse_qs
@@ -63,7 +63,6 @@ class RequestHandler(http_server.BaseHTTPRequestHandler):
         path = parts[0].split('/')
 
         route_path = route.split('/')
-        print((route_path, path))
         if len(route_path) != len(path):
             return False
 
@@ -84,20 +83,29 @@ class RequestHandler(http_server.BaseHTTPRequestHandler):
 
     def do_GET(self):
         response = 200
-        response_string = None
+        response_string = b''
         response_content_type = "application/octet-stream"
-        response_file = None
 
         add_headers = {}
+
+        def get_file_contents(repo_name, type, ref):
+            repository = repositories.get(repo_name)
+            if repository and type in repository:
+                path = repository[type].get(ref)
+                if path:
+                    with open(path, 'rb') as f:
+                        return 200, f.read()
+
+            return 404, b''
 
         if self.check_route('/v2/@repo_name/blobs/@digest'):
             repo_name = self.matches['repo_name']
             digest = self.matches['digest']
-            response_file = repositories[repo_name]['blobs'][digest]
+            response, response_string = get_file_contents(repo_name, 'blobs', digest)
         elif self.check_route('/v2/@repo_name/manifests/@ref'):
             repo_name = self.matches['repo_name']
             ref = self.matches['ref']
-            response_file = repositories[repo_name]['manifests'][ref]
+            response, response_string = get_file_contents(repo_name, 'manifests', ref)
         elif self.check_route('/index/static') or self.check_route('/index/dynamic'):
             etag = get_etag()
             if self.headers.get("If-None-Match") == etag:
@@ -112,6 +120,10 @@ class RequestHandler(http_server.BaseHTTPRequestHandler):
         else:
             response = 404
 
+        if isinstance(response_string, str):
+            response_string = response_string.encode("UTF-8")
+        add_headers['Content-Length'] = len(response_string)
+
         self.send_response(response)
         for k, v in list(add_headers.items()):
             self.send_header(k, v)
@@ -124,16 +136,7 @@ class RequestHandler(http_server.BaseHTTPRequestHandler):
 
         self.end_headers()
 
-        if response == 200:
-            if response_file:
-                with open(response_file, 'rb') as f:
-                    response_string = f.read()
-
-            if isinstance(response_string, bytes):
-                self.wfile.write(response_string)
-            else:
-                assert isinstance(response_string, str)
-                self.wfile.write(response_string.encode('utf-8'))
+        self.wfile.write(response_string)
 
     def do_HEAD(self):
         return self.do_GET()
@@ -249,6 +252,19 @@ class RequestHandler(http_server.BaseHTTPRequestHandler):
 def run(args):
     RequestHandler.protocol_version = "HTTP/1.0"
     httpd = http_server.HTTPServer(("127.0.0.1", 0), RequestHandler)
+
+    if args.cert:
+        context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        context.options |= ssl.OP_NO_TLSv1 | ssl.OP_NO_TLSv1_1
+        context.load_cert_chain(certfile=args.cert, keyfile=args.key)
+
+        if args.mtls_cacert:
+            context.load_verify_locations(cafile=args.mtls_cacert)
+            # In a real application, we'd need to check the CN against authorized users
+            context.verify_mode = ssl.CERT_REQUIRED
+
+        httpd.socket = context.wrap_socket(httpd.socket, server_side=True)
+
     host, port = httpd.socket.getsockname()[:2]
     with open("httpd-port", 'w') as file:
         file.write("%d" % port)
@@ -256,7 +272,10 @@ def run(args):
         os.write(3, bytes("Started\n", 'utf-8'))
     except OSError:
         pass
-    print("Serving HTTP on port %d" % port)
+    if args.cert:
+        print("Serving HTTPS on port %d" % port)
+    else:
+        print("Serving HTTP on port %d" % port)
     if args.dir:
         os.chdir(args.dir)
     httpd.serve_forever()
@@ -265,6 +284,9 @@ def run(args):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument("--dir")
+    parser.add_argument("--cert")
+    parser.add_argument("--key")
+    parser.add_argument("--mtls-cacert")
     args = parser.parse_args()
 
     run(args)
