@@ -121,7 +121,7 @@ static gboolean flatpak_dir_mirror_oci (FlatpakDir          *self,
                                         FlatpakRemoteState  *state,
                                         const char          *ref,
                                         const char          *opt_rev,
-                                        const char          *skip_if_current_is,
+                                        FlatpakImageSource  *opt_image_source,
                                         const char          *token,
                                         FlatpakProgress     *progress,
                                         GCancellable        *cancellable,
@@ -5284,7 +5284,7 @@ flatpak_dir_update_appstream (FlatpakDir          *self,
           if (child_repo == NULL)
             return FALSE;
 
-          if (!flatpak_dir_pull (self, state, used_branch, appstream_commit, NULL, appstream_sideload_path, NULL, NULL,
+          if (!flatpak_dir_pull (self, state, used_branch, appstream_commit, NULL, appstream_sideload_path, NULL, NULL, NULL,
                                  child_repo, FLATPAK_PULL_FLAGS_NONE, 0,
                                  progress, cancellable, error))
             {
@@ -5328,7 +5328,7 @@ flatpak_dir_update_appstream (FlatpakDir          *self,
     }
 
 
-  if (!flatpak_dir_pull (self, state, used_branch, appstream_commit, NULL, appstream_sideload_path, NULL, NULL, NULL,
+  if (!flatpak_dir_pull (self, state, used_branch, appstream_commit, NULL, appstream_sideload_path, NULL, NULL, NULL, NULL,
                          FLATPAK_PULL_FLAGS_NONE, OSTREE_REPO_PULL_FLAGS_NONE, progress,
                          cancellable, error))
     {
@@ -5880,7 +5880,7 @@ flatpak_dir_mirror_oci (FlatpakDir          *self,
                         FlatpakRemoteState  *state,
                         const char          *ref,
                         const char          *opt_rev,
-                        const char          *skip_if_current_is,
+                        FlatpakImageSource  *opt_image_source,
                         const char          *token,
                         FlatpakProgress     *progress,
                         GCancellable        *cancellable,
@@ -5888,40 +5888,42 @@ flatpak_dir_mirror_oci (FlatpakDir          *self,
 {
   g_autoptr(FlatpakImageSource) image_source = NULL;
   g_autofree char *oci_digest = NULL;
-  g_autofree char *latest_rev = NULL;
-  VarRefInfoRef latest_rev_info;
-  VarMetadataRef metadata;
-  const char *oci_repository = NULL;
   const char *delta_url = NULL;
-  const char *rev;
   gboolean res;
 
-  /* We use the summary so that we can reuse any cached json */
-  if (!flatpak_remote_state_lookup_ref (state, ref, &latest_rev, NULL, &latest_rev_info, NULL, error))
-    return FALSE;
-  if (latest_rev == NULL)
-    return flatpak_fail_error (error, FLATPAK_ERROR_REF_NOT_FOUND,
-                               _("Couldn't find latest checksum for ref %s in remote %s"),
-                               ref, state->remote_name);
-
-  rev = opt_rev != NULL ? opt_rev : latest_rev;
-
-  if (skip_if_current_is != NULL && strcmp (rev, skip_if_current_is) == 0)
+  if (opt_image_source)
     {
-      return flatpak_fail_error (error, FLATPAK_ERROR_ALREADY_INSTALLED,
-                                 _("%s commit %s already installed"),
-                                 ref, rev);
+      image_source = g_object_ref (opt_image_source);
+      oci_digest = g_strdup (flatpak_image_source_get_digest (image_source));
     }
+  else
+    {
+      g_autofree char *latest_rev = NULL;
+      VarRefInfoRef latest_rev_info;
+      VarMetadataRef metadata;
+        const char *oci_repository = NULL;
+      const char *rev;
 
-  metadata = var_ref_info_get_metadata (latest_rev_info);
-  oci_repository = var_metadata_lookup_string (metadata, "xa.oci-repository", NULL);
-  delta_url = var_metadata_lookup_string (metadata, "xa.delta-url", NULL);
+      /* We use the summary so that we can reuse any cached json */
+      if (!flatpak_remote_state_lookup_ref (state, ref, &latest_rev, NULL, &latest_rev_info, NULL, error))
+        return FALSE;
+      if (latest_rev == NULL)
+        return flatpak_fail_error (error, FLATPAK_ERROR_REF_NOT_FOUND,
+                                  _("Couldn't find latest checksum for ref %s in remote %s"),
+                                  ref, state->remote_name);
 
-  oci_digest = g_strconcat ("sha256:", rev, NULL);
+      rev = opt_rev != NULL ? opt_rev : latest_rev;
 
-  image_source = flatpak_remote_state_new_image_source (state, oci_repository, oci_digest, token, cancellable, error);
-  if (image_source == NULL)
-    return FALSE;
+      metadata = var_ref_info_get_metadata (latest_rev_info);
+      oci_repository = var_metadata_lookup_string (metadata, "xa.oci-repository", NULL);
+      delta_url = var_metadata_lookup_string (metadata, "xa.delta-url", NULL);
+
+      oci_digest = g_strconcat ("sha256:", rev, NULL);
+
+      image_source = flatpak_remote_state_new_image_source (state, oci_repository, oci_digest, token, cancellable, error);
+      if (image_source == NULL)
+        return FALSE;
+    }
 
   flatpak_progress_start_oci_pull (progress);
 
@@ -5941,6 +5943,7 @@ flatpak_dir_pull_oci (FlatpakDir          *self,
                       FlatpakRemoteState  *state,
                       const char          *ref,
                       const char          *opt_rev,
+                      FlatpakImageSource  *opt_image_source,
                       OstreeRepo          *repo,
                       FlatpakPullFlags     flatpak_flags,
                       OstreeRepoPullFlags  flags,
@@ -5951,39 +5954,48 @@ flatpak_dir_pull_oci (FlatpakDir          *self,
 {
   g_autoptr(FlatpakImageSource) image_source = NULL;
   FlatpakOciRegistry *registry = NULL;
-  const char *oci_repository = NULL;
   const char *delta_url = NULL;
   g_autofree char *oci_digest = NULL;
   g_autofree char *checksum = NULL;
-  VarRefInfoRef latest_rev_info;
   g_autofree char *latest_alt_commit = NULL;
-  VarMetadataRef metadata;
-  g_autofree char *latest_rev = NULL;
   G_GNUC_UNUSED g_autofree char *latest_commit =
     flatpak_dir_read_latest (self, state->remote_name, ref, &latest_alt_commit, cancellable, NULL);
   g_autofree char *name = NULL;
 
-  /* We use the summary so that we can reuse any cached json */
-  if (!flatpak_remote_state_lookup_ref (state, ref, &latest_rev, NULL, &latest_rev_info, NULL, error))
-    return FALSE;
-  if (latest_rev == NULL)
-    return flatpak_fail_error (error, FLATPAK_ERROR_REF_NOT_FOUND,
-                               _("Couldn't find latest checksum for ref %s in remote %s"),
-                               ref, state->remote_name);
+  if (opt_image_source)
+    {
+      image_source = g_object_ref (opt_image_source);
+      oci_digest = g_strdup (flatpak_image_source_get_digest (image_source));
+    }
+  else
+    {
+      VarMetadataRef metadata;
+      VarRefInfoRef latest_rev_info;
+      const char *oci_repository = NULL;
+      g_autofree char *latest_rev = NULL;
 
-  metadata = var_ref_info_get_metadata (latest_rev_info);
-  oci_repository = var_metadata_lookup_string (metadata, "xa.oci-repository", NULL);
-  delta_url = var_metadata_lookup_string (metadata, "xa.delta-url", NULL);
+      /* We use the summary so that we can reuse any cached json */
+      if (!flatpak_remote_state_lookup_ref (state, ref, &latest_rev, NULL, &latest_rev_info, NULL, error))
+        return FALSE;
+      if (latest_rev == NULL)
+        return flatpak_fail_error (error, FLATPAK_ERROR_REF_NOT_FOUND,
+                                  _("Couldn't find latest checksum for ref %s in remote %s"),
+                                  ref, state->remote_name);
 
-  oci_digest = g_strconcat ("sha256:", opt_rev != NULL ? opt_rev : latest_rev, NULL);
+      metadata = var_ref_info_get_metadata (latest_rev_info);
+      oci_repository = var_metadata_lookup_string (metadata, "xa.oci-repository", NULL);
+      delta_url = var_metadata_lookup_string (metadata, "xa.delta-url", NULL);
+
+      oci_digest = g_strconcat ("sha256:", opt_rev != NULL ? opt_rev : latest_rev, NULL);
+
+      image_source = flatpak_remote_state_new_image_source (state, oci_repository, oci_digest, token, cancellable, error);
+      if (image_source == NULL)
+        return FALSE;
+    }
 
   /* Short circuit if we've already got this commit */
   if (latest_alt_commit != NULL && strcmp (oci_digest + strlen ("sha256:"), latest_alt_commit) == 0)
     return TRUE;
-
-  image_source = flatpak_remote_state_new_image_source (state, oci_repository, oci_digest, token, cancellable, error);
-  if (image_source == NULL)
-    return FALSE;
 
   if (repo == NULL)
     repo = self->repo;
@@ -6023,6 +6035,7 @@ flatpak_dir_pull (FlatpakDir                           *self,
                   const char                           *opt_rev,
                   const char                          **subpaths,
                   GFile                                *sideload_repo,
+                  FlatpakImageSource                   *image_source,
                   GBytes                               *require_metadata,
                   const char                           *token,
                   OstreeRepo                           *repo,
@@ -6053,8 +6066,8 @@ flatpak_dir_pull (FlatpakDir                           *self,
   if (repo == NULL && !flatpak_dir_repo_lock (self, &lock, LOCK_SH, cancellable, error))
     return FALSE;
 
-  if (flatpak_dir_get_remote_oci (self, state->remote_name))
-    return flatpak_dir_pull_oci (self, state, ref, opt_rev, repo, flatpak_flags,
+  if (image_source || flatpak_dir_get_remote_oci (self, state->remote_name))
+    return flatpak_dir_pull_oci (self, state, ref, opt_rev, image_source, repo, flatpak_flags,
                                  flags, token, progress, cancellable, error);
 
   if (!ostree_repo_remote_get_url (self->repo,
@@ -9815,6 +9828,7 @@ flatpak_dir_install (FlatpakDir          *self,
                      const char         **opt_subpaths,
                      const char         **opt_previous_ids,
                      GFile               *sideload_repo,
+                     FlatpakImageSource  *image_source,
                      GBytes              *require_metadata,
                      const char          *token,
                      FlatpakProgress     *progress,
@@ -9879,7 +9893,8 @@ flatpak_dir_install (FlatpakDir          *self,
 
           child_repo_path = g_file_get_path (registry_file);
 
-          if (!flatpak_dir_mirror_oci (self, registry, state, flatpak_decomposed_get_ref (ref), opt_commit, NULL, token, progress, cancellable, error))
+          if (!flatpak_dir_mirror_oci (self, registry, state, flatpak_decomposed_get_ref (ref),
+                                       opt_commit, image_source, token, progress, cancellable, error))
             return FALSE;
         }
       else if (!gpg_verify_summary || !gpg_verify)
@@ -9973,7 +9988,7 @@ flatpak_dir_install (FlatpakDir          *self,
 
           flatpak_flags |= FLATPAK_PULL_FLAGS_SIDELOAD_EXTRA_DATA;
 
-          if (!flatpak_dir_pull (self, state, flatpak_decomposed_get_ref (ref), opt_commit, subpaths, sideload_repo, require_metadata, token,
+          if (!flatpak_dir_pull (self, state, flatpak_decomposed_get_ref (ref), opt_commit, subpaths, sideload_repo, NULL, require_metadata, token,
                                  child_repo,
                                  flatpak_flags,
                                  0,
@@ -10048,7 +10063,8 @@ flatpak_dir_install (FlatpakDir          *self,
 
   if (!no_pull)
     {
-      if (!flatpak_dir_pull (self, state, flatpak_decomposed_get_ref (ref), opt_commit, opt_subpaths, sideload_repo, require_metadata, token, NULL,
+      if (!flatpak_dir_pull (self, state, flatpak_decomposed_get_ref (ref), opt_commit, opt_subpaths,
+                             sideload_repo, image_source, require_metadata, token, NULL,
                              flatpak_flags, OSTREE_REPO_PULL_FLAGS_NONE,
                              progress, cancellable, error))
         return FALSE;
@@ -10495,6 +10511,7 @@ flatpak_dir_update (FlatpakDir                           *self,
                     const char                          **opt_subpaths,
                     const char                          **opt_previous_ids,
                     GFile                                *sideload_repo,
+                    FlatpakImageSource                   *image_source,
                     GBytes                               *require_metadata,
                     const char                           *token,
                     FlatpakProgress                      *progress,
@@ -10582,7 +10599,7 @@ flatpak_dir_update (FlatpakDir                           *self,
           child_repo_path = g_file_get_path (registry_file);
 
           if (!flatpak_dir_mirror_oci (self, registry, state, flatpak_decomposed_get_ref (ref),
-                                       commit, NULL, token, progress, cancellable, error))
+                                       commit, image_source, token, progress, cancellable, error))
             return FALSE;
         }
       else if (!gpg_verify_summary || !gpg_verify)
@@ -10662,7 +10679,7 @@ flatpak_dir_update (FlatpakDir                           *self,
 
           flatpak_flags |= FLATPAK_PULL_FLAGS_SIDELOAD_EXTRA_DATA;
           if (!flatpak_dir_pull (self, state, flatpak_decomposed_get_ref (ref),
-                                 commit, subpaths, sideload_repo, require_metadata, token,
+                                 commit, subpaths, sideload_repo, NULL, require_metadata, token,
                                  child_repo,
                                  flatpak_flags, 0,
                                  progress, cancellable, error))
@@ -10728,7 +10745,7 @@ flatpak_dir_update (FlatpakDir                           *self,
   if (!no_pull)
     {
       if (!flatpak_dir_pull (self, state, flatpak_decomposed_get_ref (ref),
-                             commit, subpaths, sideload_repo, require_metadata, token,
+                             commit, subpaths, sideload_repo, image_source, require_metadata, token,
                              NULL, flatpak_flags, OSTREE_REPO_PULL_FLAGS_NONE,
                              progress, cancellable, error))
         return FALSE;

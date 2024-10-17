@@ -44,6 +44,9 @@ FlatpakImageSource *flatpak_image_source_new_remote (const char   *uri,
                                                      const char   *digest,
                                                      GCancellable *cancellable,
                                                      GError      **error);
+FlatpakImageSource *flatpak_image_source_new_for_location (const char   *location,
+                                                           GCancellable *cancellable,
+                                                           GError      **error);
 
 void flatpak_image_source_set_token (FlatpakImageSource *self,
                                      const char         *token);
@@ -56,6 +59,7 @@ gsize               flatpak_image_source_get_manifest_size  (FlatpakImageSource 
 FlatpakOciImage    *flatpak_image_source_get_image_config   (FlatpakImageSource *self);
 
 const char *flatpak_image_source_get_ref              (FlatpakImageSource *self);
+const char *flatpak_image_source_get_metadata         (FlatpakImageSource *self);
 const char *flatpak_image_source_get_commit           (FlatpakImageSource *self);
 const char *flatpak_image_source_get_parent_commit    (FlatpakImageSource *self);
 guint64     flatpak_image_source_get_commit_timestamp (FlatpakImageSource *self);
