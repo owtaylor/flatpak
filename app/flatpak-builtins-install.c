@@ -181,9 +181,6 @@ install_bundle (FlatpakDir *dir,
   flatpak_transaction_set_auto_install_sdk (transaction, opt_include_sdk);
   flatpak_transaction_set_auto_install_debug (transaction, opt_include_debug);
 
-  for (int i = 0; opt_sideload_repos != NULL && opt_sideload_repos[i] != NULL; i++)
-    flatpak_transaction_add_sideload_repo (transaction, opt_sideload_repos[i]);
-
   if (!flatpak_transaction_add_install_bundle (transaction, file, gpg_data, error))
     return FALSE;
 
@@ -261,8 +258,8 @@ install_from (FlatpakDir *dir,
   flatpak_transaction_set_auto_install_sdk (transaction, opt_include_sdk);
   flatpak_transaction_set_auto_install_debug (transaction, opt_include_debug);
 
-  for (int i = 0; opt_sideload_repos != NULL && opt_sideload_repos[i] != NULL; i++)
-    flatpak_transaction_add_sideload_repo (transaction, opt_sideload_repos[i]);
+  if (!setup_sideload_repositories (transaction, opt_sideload_repos, cancellable, error))
+    return FALSE;
 
   if (!flatpak_transaction_add_install_flatpakref (transaction, file_data, error))
     return FALSE;
@@ -322,8 +319,8 @@ install_image (FlatpakDir *dir,
   flatpak_transaction_set_auto_install_sdk (transaction, opt_include_sdk);
   flatpak_transaction_set_auto_install_debug (transaction, opt_include_debug);
 
-  for (int i = 0; opt_sideload_repos != NULL && opt_sideload_repos[i] != NULL; i++)
-    flatpak_transaction_add_sideload_repo (transaction, opt_sideload_repos[i]);
+  if (!setup_sideload_repositories (transaction, opt_sideload_repos, cancellable, error))
+    return FALSE;
 
   if (!flatpak_transaction_add_install_image (transaction, location, error))
     return FALSE;
@@ -577,8 +574,8 @@ flatpak_builtin_install (int argc, char **argv, GCancellable *cancellable, GErro
   flatpak_transaction_set_auto_install_sdk (transaction, opt_include_sdk);
   flatpak_transaction_set_auto_install_debug (transaction, opt_include_debug);
 
-  for (i = 0; opt_sideload_repos != NULL && opt_sideload_repos[i] != NULL; i++)
-    flatpak_transaction_add_sideload_repo (transaction, opt_sideload_repos[i]);
+  if (!setup_sideload_repositories (transaction, opt_sideload_repos, cancellable, error))
+    return FALSE;
 
   for (i = 0; i < n_prefs; i++)
     {
