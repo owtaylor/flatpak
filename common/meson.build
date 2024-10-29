@@ -173,6 +173,7 @@ sources = [
   'flatpak-error.c',
   'flatpak-exports.c',
   'flatpak-glib-backports.c',
+  'flatpak-image-collection.c',
   'flatpak-image-source.c',
   'flatpak-installation.c',
   'flatpak-installed-ref.c',
