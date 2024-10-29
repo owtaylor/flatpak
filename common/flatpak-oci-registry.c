@@ -3623,7 +3623,6 @@ flatpak_mirror_image_from_oci (FlatpakOciRegistry    *dst_registry,
                                FlatpakImageSource    *image_source,
                                const char            *remote,
                                const char            *ref,
-                               const char            *delta_url,
                                OstreeRepo            *repo,
                                FlatpakOciPullProgress progress_cb,
                                gpointer               progress_user_data,
@@ -3635,6 +3634,7 @@ flatpak_mirror_image_from_oci (FlatpakOciRegistry    *dst_registry,
   const char *oci_repository = flatpak_image_source_get_oci_repository (image_source);
   const char *digest = flatpak_image_source_get_digest (image_source);
   FlatpakOciManifest *manifest = flatpak_image_source_get_manifest (image_source);
+  const char *delta_url = flatpak_image_source_get_delta_url (image_source);
   FlatpakOciImage *image_config = flatpak_image_source_get_image_config (image_source);
   g_autoptr(FlatpakOciDescriptor) manifest_desc = NULL;
   g_autoptr(FlatpakOciManifest) delta_manifest = NULL;
@@ -3750,7 +3750,6 @@ flatpak_mirror_image_from_oci (FlatpakOciRegistry    *dst_registry,
 char *
 flatpak_pull_from_oci (OstreeRepo            *repo,
                        FlatpakImageSource    *image_source,
-                       const char            *delta_url,
                        const char            *remote,
                        const char            *ref,
                        FlatpakPullFlags       flags,
@@ -3763,6 +3762,7 @@ flatpak_pull_from_oci (OstreeRepo            *repo,
   const char *oci_repository = flatpak_image_source_get_oci_repository (image_source);
   const char *digest = flatpak_image_source_get_digest (image_source);
   FlatpakOciManifest *manifest = flatpak_image_source_get_manifest (image_source);
+  const char *delta_url = flatpak_image_source_get_delta_url (image_source);
   FlatpakOciImage *image_config = flatpak_image_source_get_image_config (image_source);
   gboolean force_disable_deltas = (flags & FLATPAK_PULL_FLAGS_NO_STATIC_DELTAS) != 0;
   g_autoptr(OstreeMutableTree) archive_mtree = NULL;
