@@ -110,8 +110,8 @@ flatpak_builtin_preinstall (int argc, char **argv, GCancellable *cancellable, GE
   flatpak_transaction_set_auto_install_sdk (transaction, opt_include_sdk);
   flatpak_transaction_set_auto_install_debug (transaction, opt_include_debug);
 
-  for (int i = 0; opt_sideload_repos != NULL && opt_sideload_repos[i] != NULL; i++)
-    flatpak_transaction_add_sideload_repo (transaction, opt_sideload_repos[i]);
+  if (!setup_sideload_repositories (transaction, opt_sideload_repos, cancellable, error))
+    return FALSE;
 
   if (!flatpak_transaction_add_sync_preinstalled (transaction, error))
     return FALSE;
