@@ -58,6 +58,46 @@
 GType flatpak_dir_get_type (void);
 GType flatpak_deploy_get_type (void);
 
+#define FLATPAK_REF_GROUP "Flatpak Ref"
+#define FLATPAK_REF_VERSION_KEY "Version"
+#define FLATPAK_REF_URL_KEY "Url"
+#define FLATPAK_REF_RUNTIME_REPO_KEY "RuntimeRepo"
+#define FLATPAK_REF_SUGGEST_REMOTE_NAME_KEY "SuggestRemoteName"
+#define FLATPAK_REF_TITLE_KEY "Title"
+#define FLATPAK_REF_GPGKEY_KEY "GPGKey"
+#define FLATPAK_REF_IS_RUNTIME_KEY "IsRuntime"
+#define FLATPAK_REF_NAME_KEY "Name"
+#define FLATPAK_REF_BRANCH_KEY "Branch"
+#define FLATPAK_REF_COLLECTION_ID_KEY "CollectionID"
+#define FLATPAK_REF_DEPLOY_COLLECTION_ID_KEY "DeployCollectionID"
+#define FLATPAK_REF_DEPLOY_SIDELOAD_COLLECTION_ID_KEY "DeploySideloadCollectionID"
+
+#define FLATPAK_REPO_GROUP "Flatpak Repo"
+#define FLATPAK_REPO_VERSION_KEY "Version"
+#define FLATPAK_REPO_URL_KEY "Url"
+#define FLATPAK_REPO_SUBSET_KEY "Subset"
+#define FLATPAK_REPO_TITLE_KEY "Title"
+#define FLATPAK_REPO_DEFAULT_BRANCH_KEY "DefaultBranch"
+#define FLATPAK_REPO_GPGKEY_KEY "GPGKey"
+#define FLATPAK_REPO_NODEPS_KEY "NoDeps"
+#define FLATPAK_REPO_COMMENT_KEY "Comment"
+#define FLATPAK_REPO_DESCRIPTION_KEY "Description"
+#define FLATPAK_REPO_HOMEPAGE_KEY "Homepage"
+#define FLATPAK_REPO_ICON_KEY "Icon"
+#define FLATPAK_REPO_FILTER_KEY "Filter"
+#define FLATPAK_REPO_AUTHENTICATOR_NAME_KEY "AuthenticatorName"
+#define FLATPAK_REPO_AUTHENTICATOR_INSTALL_KEY "AuthenticatorInstall"
+
+#define FLATPAK_REPO_COLLECTION_ID_KEY "CollectionID"
+#define FLATPAK_REPO_DEPLOY_COLLECTION_ID_KEY "DeployCollectionID"
+#define FLATPAK_REPO_DEPLOY_SIDELOAD_COLLECTION_ID_KEY "DeploySideloadCollectionID"
+
+#define FLATPAK_PREINSTALL_GROUP "Flatpak Preinstall"
+#define FLATPAK_PREINSTALL_IS_RUNTIME_KEY "IsRuntime"
+#define FLATPAK_PREINSTALL_NAME_KEY "Name"
+#define FLATPAK_PREINSTALL_BRANCH_KEY "Branch"
+#define FLATPAK_PREINSTALL_COLLECTION_ID_KEY "CollectionID"
+
 #define FLATPAK_CLI_UPDATE_INTERVAL_MS 300
 
 typedef struct
@@ -187,6 +227,7 @@ typedef enum {
   FLATPAK_HELPER_DEPLOY_FLAGS_APP_HINT = 1 << 5,
   FLATPAK_HELPER_DEPLOY_FLAGS_INSTALL_HINT = 1 << 6,
   FLATPAK_HELPER_DEPLOY_FLAGS_UPDATE_PINNED = 1 << 7,
+  FLATPAK_HELPER_DEPLOY_FLAGS_UPDATE_PREINSTALLED = 1 << 8,
 } FlatpakHelperDeployFlags;
 
 #define FLATPAK_HELPER_DEPLOY_FLAGS_ALL (FLATPAK_HELPER_DEPLOY_FLAGS_UPDATE | \
@@ -196,18 +237,21 @@ typedef enum {
                                          FLATPAK_HELPER_DEPLOY_FLAGS_NO_INTERACTION | \
                                          FLATPAK_HELPER_DEPLOY_FLAGS_APP_HINT | \
                                          FLATPAK_HELPER_DEPLOY_FLAGS_INSTALL_HINT | \
-                                         FLATPAK_HELPER_DEPLOY_FLAGS_UPDATE_PINNED)
+                                         FLATPAK_HELPER_DEPLOY_FLAGS_UPDATE_PINNED | \
+                                         FLATPAK_HELPER_DEPLOY_FLAGS_UPDATE_PREINSTALLED)
 
 typedef enum {
   FLATPAK_HELPER_UNINSTALL_FLAGS_NONE = 0,
   FLATPAK_HELPER_UNINSTALL_FLAGS_KEEP_REF = 1 << 0,
   FLATPAK_HELPER_UNINSTALL_FLAGS_FORCE_REMOVE = 1 << 1,
   FLATPAK_HELPER_UNINSTALL_FLAGS_NO_INTERACTION = 1 << 2,
+  FLATPAK_HELPER_UNINSTALL_FLAGS_UPDATE_PREINSTALLED = 1 << 3,
 } FlatpakHelperUninstallFlags;
 
 #define FLATPAK_HELPER_UNINSTALL_FLAGS_ALL (FLATPAK_HELPER_UNINSTALL_FLAGS_KEEP_REF | \
                                             FLATPAK_HELPER_UNINSTALL_FLAGS_FORCE_REMOVE | \
-                                            FLATPAK_HELPER_UNINSTALL_FLAGS_NO_INTERACTION)
+                                            FLATPAK_HELPER_UNINSTALL_FLAGS_NO_INTERACTION | \
+                                            FLATPAK_HELPER_UNINSTALL_FLAGS_UPDATE_PREINSTALLED)
 
 typedef enum {
   FLATPAK_HELPER_CONFIGURE_REMOTE_FLAGS_NONE = 0,
@@ -370,6 +414,14 @@ gboolean        flatpak_save_override_keyfile   (GKeyFile    *metakey,
 gboolean        flatpak_remove_override_keyfile (const char  *app_id,
                                                  gboolean     user,
                                                  GError     **error);
+
+char **  flatpak_get_preinstall_config_file_paths (GCancellable       *cancellable,
+                                                   GError            **error);
+gboolean flatpak_parse_preinstall_config_file     (const char         *file_path,
+                                                   const char         *default_arch,
+                                                   FlatpakDecomposed **ref_out,
+                                                   char              **collection_id_out,
+                                                   GError            **error);
 
 int          flatpak_deploy_data_get_version                     (GBytes *deploy_data);
 const char * flatpak_deploy_data_get_origin                      (GBytes *deploy_data);
@@ -687,6 +739,7 @@ gboolean              flatpak_dir_deploy_install                            (Fla
                                                                              const char                   **previous_ids,
                                                                              gboolean                       reinstall,
                                                                              gboolean                       pin_on_deploy,
+                                                                             gboolean                       update_preinstalled_on_deploy,
                                                                              GCancellable                  *cancellable,
                                                                              GError                       **error);
 gboolean              flatpak_dir_install                                   (FlatpakDir                    *self,
@@ -696,6 +749,7 @@ gboolean              flatpak_dir_install                                   (Fla
                                                                              gboolean                       reinstall,
                                                                              gboolean                       app_hint,
                                                                              gboolean                       pin_on_deploy,
+                                                                             gboolean                       update_preinstalled_on_deploy,
                                                                              FlatpakRemoteState            *state,
                                                                              FlatpakDecomposed             *ref,
                                                                              const char                    *opt_commit,
