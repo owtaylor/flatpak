@@ -171,6 +171,9 @@ static gboolean flatpak_dir_lookup_remote_filter (FlatpakDir *self,
                                                   GRegex    **deny_regex,
                                                   GError **error);
 
+static char *flatpak_dir_get_remote_signature_lookaside (FlatpakDir *self,
+                                                         const char *remote_name);
+
 static void ensure_http_session (FlatpakDir *self);
 
 static void flatpak_dir_log (FlatpakDir *self,
@@ -1030,11 +1033,13 @@ lookup_oci_registry_uri_from_summary (GVariant *summary,
 
 static FlatpakOciRegistry *
 flatpak_remote_state_new_oci_registry (FlatpakRemoteState *self,
+                                       FlatpakDir   *dir,
                                        const char   *token,
                                        GCancellable *cancellable,
                                        GError      **error)
 {
   g_autofree char *registry_uri = NULL;
+  g_autofree char *signature_lookaside = NULL;
   g_autoptr(FlatpakOciRegistry) registry = NULL;
 
   if (!flatpak_remote_state_ensure_summary (self, error))
@@ -1049,6 +1054,9 @@ flatpak_remote_state_new_oci_registry (FlatpakRemoteState *self,
     return NULL;
 
   flatpak_oci_registry_set_token (registry, token);
+
+  signature_lookaside = flatpak_dir_get_remote_signature_lookaside (dir, self->remote_name);
+  flatpak_oci_registry_set_signature_lookaside (registry, signature_lookaside);
 
   return g_steal_pointer (&registry);
 }
@@ -14298,6 +14306,21 @@ flatpak_dir_get_remote_disabled (FlatpakDir *self,
     return TRUE; /* Empty URL => disabled */
 
   return FALSE;
+}
+
+static char *
+flatpak_dir_get_remote_signature_lookaside (FlatpakDir *self,
+                                            const char *remote_name)
+{
+  GKeyFile *config = flatpak_dir_get_repo_config (self);
+  g_autofree char *group = get_group (remote_name);
+  g_autofree char *signature_lookaside = NULL;
+
+  signature_lookaside = g_key_file_get_string (config, group, "xa.signature-lookaside", NULL);
+  if (signature_lookaside == NULL || *signature_lookaside == 0)
+    return NULL;
+
+  return g_steal_pointer (&signature_lookaside);
 }
 
 static char *
